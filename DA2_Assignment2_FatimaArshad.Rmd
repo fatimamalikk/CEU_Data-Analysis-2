@@ -1,0 +1,296 @@
+---
+title: "DA2_Assignment2"
+author: "Fatima Arshad"
+output: pdf_document
+---
+
+```{r include=FALSE}
+# Libraries
+rm(list=ls())
+
+library(tidyverse)
+library(modelsummary)
+library(fixest)
+library(dplyr)
+library(kableExtra)
+library(huxtable)
+library(data.table)
+library(stargazer)
+library(haven)
+library(estimatr)
+library(boot)
+
+```
+
+
+```{r include=FALSE}
+# Importing data
+#data_all <- read_csv("https://osf.io/4ay9x/download")
+
+data_all <- read_csv(paste0("C:/Users/4star/Downloads/morg-2014-emp.csv"), 
+                     col_types = cols(.default = "?", 
+                                      state = "c"))
+```
+
+
+```{r warning=FALSE, include=FALSE}
+# Filters and Data Transformations
+
+data <- data_all %>% filter(occ2012==3600)
+data <-  data.table(data)
+
+data <- data %>% mutate(female = as.numeric(sex == 2)) %>% 
+  mutate(hourly_wage = earnwke/uhours) %>%
+  mutate(ln_hourly_wage = log(hourly_wage))
+
+data <- data %>% filter(grade92 >= 41)
+
+data$gender <- as.numeric(data$sex)
+data$gender[data$gender==1] <- "Male"
+data$gender[data$gender==2] <- "Female"
+data$gender <- as.character(data$gender)
+
+
+```
+
+
+## Introduction
+Do female health care workers earn more their male counterparts? Do employees with higher educational degrees earn more than the less qualified ones? This study is conducted to answer these questions by examining the gender pay gap and pay gap due to levels of education in the nursing, psychiatric, and home help aides. We will not only find the general pattern for the data but also forecast these differences which is achieved by generalizing the data set using statistical inference and external validity principles. We use the [**Current Population Survey (CPS) dataset**](https://osf.io/4ay9x/) for the US. For the purpose of this study we will choose the _**Nursing, Psychiatric, and Home Help Aides**_ occupation with _**3600**_ census occupation code. All other occupation codes can be accessed [**here**](https://osf.io/57n9q/).
+
+## Data Transformation and Filtering
+We are interested in the gender and age pay gap for health care workers. For this analysis, we will create the following four new variables:
+1. A binary variable _**female**_ with a binary value of _**1**_
+2. hourly wage _**(hourly_wage)**_ calculated by dividing the weekly earnings (earnwke) by the number of hours (uhours)
+3. log of hourly wage _**(ln_hourly_wage)**_
+4. A binary character variable _**gender**_ using sex variable with male and female. 
+
+## Introductory Findings
+
+The calculations in _**Table 1**_ shows that our sample is varied with high number of females (445) as compared to males (63). Table 2 shows a descriptive summary of the variables of interest for this analysis. It is evident from the table that the sample distribution is right skewed as the mean lies on the right of the median. Multiple factors in the data contribute to the skewness. Firstly, the distribution is positively skewed because of the relatively high maximum hourly wage of USD 72 per hour. Secondly, the average weekly work hours is 36, however, for some workers it is significantly higher with a maximum of 82 hours per week. Moreover, the presence of extreme values such as a minimum wage of USD 2.50 also play a role in the skewness.
+
+## Analysis
+
+Initially, we visualize the distribution of the hourly wage using ggplot. _**Figure 1**_ illustrates that the wage distribution (hourly_wage) is positively skewed. Subsequently, for this analysis we will use the natural logarithm of wage. _**Figure 2**_ illustrates the distribution for ln(hourly_wage). Now we are all set to begin the regression analysis to uncover the difference in hourly wages with respect to gender and levels of education. 
+
+Firstly, we will analyze the wage gap with respect to gender. A summary of the unconditional gender gap is presented in _**Table 3**_. We calculate following two regressions: 
+1. _**level-level regression: **_ It describes that an average female earns USD 2.8 less than their male counterparts. This wage gap is significant at 1% significant level. 
+2. _**log-level regression: **_ It shows that an average female earns 12% less than males. This coefficient is significant with more than 99.9% confidence level.
+
+Secondly, we will analyze the wage gap with respect to different levels of education. _**Table 4**_ describes the results of multivariate regression. _**Model 2**_ represents the findings of conditioning gender gap on education. It shows that on average, females earn 9.4 % less than males and this coefficient is significant at 1% significant level. _**Model 3**_ compares employees of same gender with different education levels using Associate-vocational degree as the baseline variable. We select values with more than 99 % confidence level. Results show that same-gender Bachelor's degree employees on average, earn 12.9% more than employees with Associate- vocational degree. Next, the regression with interaction terms using same base variables is illustrated in _**Table 5**_.The results show that there is still a gender gap for women with higher educational levels with 99% confidence interval. A women with a Masters degree earns on an average 32.5 % less than males. 
+In conclusion, it is evident that females earn less than men even with the same level of education. Moreover, a 1000 iterations of bootstrap simulation yielded similar results which validates the conclusion.
+
+
+
+```{r echo=FALSE, fig.align = 'left'}
+
+# Observations
+data[, .N, by = data$gender] %>% kbl(caption = "")  %>% kable_classic(full_width=F)
+```
+
+
+```{r echo=FALSE}
+# Summary
+
+P95 <- function(x){ quantile(x,.95,na.rm=T)}
+datasummary((`Weekly earnings` = earnwke) + (`Weekly hours worked` = uhours) + hourly_wage + ln_hourly_wage ~ Mean + SD + Min + Max + Median + P95 + N, data = data, title = "" )
+
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, fig.align = 'left'}
+
+reg1 <- lm(hourly_wage~female, data)
+reg2 <- lm(ln_hourly_wage~female,data) 
+
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+msummary(list("LM - Hourly Wage" = reg1, "LM - Log Hourly Wage" = reg2),
+         fmt="%.4f",
+         gof_omit = 'DF|Deviance|Log.Lik.|F|R2 Adj.|AIC|BIC|R2 Pseudo|R2 Within',
+         stars=c('*' = .05, '**' = .01),
+         title = ""
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+
+data <- data %>% mutate(
+  ed_Associate_voc=as.numeric(grade92==41),
+  ed_Associate_ap=as.numeric(grade92==42),
+  ed_BA=as.numeric(grade92==43),
+  ed_MA=as.numeric(grade92==44),
+                      ed_Profess = as.numeric(grade92==45),
+                      ed_PhD = as.numeric(grade92==46))
+
+
+
+reg3 <- lm_robust(ln_hourly_wage ~ female, data=data, se_type = "HC1")
+
+reg4 <- lm_robust(ln_hourly_wage ~ female + grade92, data = data)
+# Base is ed_Associate_voc
+reg5 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_ap +ed_BA + ed_MA + ed_Profess + ed_PhD, data = data, se_type = "HC1")
+
+
+# Base is ed_Associate_ap
+reg6 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_voc +ed_BA + ed_MA + ed_Profess + ed_PhD, data=data, se_type = "HC1")
+
+# Base is ed_BA
+reg7 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_voc + ed_Associate_ap + ed_MA + ed_Profess + ed_PhD, data=data, se_type = "HC1")
+
+# Base is ed_MA
+reg8 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_voc + ed_Associate_ap + ed_BA + ed_Profess + ed_PhD, data=data, se_type = "HC1")
+
+# Base is ed_Profess
+reg9 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_voc + ed_Associate_ap + ed_BA + ed_MA + ed_PhD, data=data, se_type = "HC1")
+
+# Base is ed_PhD
+reg10 <- lm_robust(ln_hourly_wage ~ female + ed_Associate_voc + ed_Associate_ap + ed_BA + ed_MA + ed_Profess, data=data, se_type = "HC1")
+
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+msummary(list(reg3, reg4, reg5),
+         fmt="%.4f",
+         gof_omit = 'DF|Deviance|Log.Lik.|F|R2 Adj.|AIC|BIC|R2 Pseudo|R2 Within|Std.Errors',
+         stars=c('*' = .05, '**' = .01),
+         title = ""
+         )
+
+```
+
+
+```{r warning=FALSE, include=FALSE}
+# Interaction between gender and education levels
+
+
+reg11 <- lm_robust(ln_hourly_wage ~ grade92 + ed_Associate_ap + ed_BA + ed_MA + ed_Profess + ed_PhD, data=data %>% filter(female==1), se_type = "HC1")
+
+reg12 <- lm_robust(ln_hourly_wage ~ grade92 + ed_Associate_ap + ed_BA + ed_MA + ed_Profess + ed_PhD, data = data %>% filter(female==0), se_type = "HC1")
+
+reg13 <- lm_robust(ln_hourly_wage ~ grade92 + female + female*ed_Associate_ap + female*ed_BA + female*ed_MA + female*ed_Profess + female*ed_PhD, data=data, se_type = "HC1")
+
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# problem
+
+msummary(list("Women (log hourly Wage)" = reg11, "Men (log hourly Wage)" = reg12, "All (log hourly Wage)" = reg13),
+         fmt="%.4f",
+         gof_omit = 'DF|Deviance|Log.Lik.|F|R2 Adj.|AIC|BIC|R2 Pseudo|R2 Within|Std.Errors',
+         stars=c('*' = .05, '**' = .01),
+         title = ""
+         )
+
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.height=3, fig.width=3}
+##############################
+# graphs
+##############################
+
+# FIGURE 1
+figure1 <- ggplot(data = data, aes(x = hourly_wage)) + 
+  geom_density(color = "#3a5e8cFF") + 
+  ggtitle("Figure 1") + 
+  theme_light() +
+  labs(x = "Hourly Wage",y = "Density")
+figure1
+
+
+# FIGURE 2
+figure2 <- ggplot(data = data, aes(x = ln_hourly_wage)) + 
+  geom_density(color = "#3a5e8cFF") + 
+  ggtitle("Figure 2") + 
+  theme_light() +
+  labs(x = "Log of Hourly Wage",y = "Density")
+figure2
+
+
+# FIGURE 3
+graph1 <- ggplot(data = data, aes(x = grade92, y = ln_hourly_wage)) +
+  geom_point(color = "#3a5e8cFF") + 
+  geom_smooth(method="loess", color = "#10a53dFF", formual = 'y ~ x') +
+  scale_x_continuous(expand=c(0.01, 0.01), limits = c(40.5, 46.5),   breaks=seq(40, 47,   by=1)) + 
+  scale_y_continuous(expand=c(0.01, 0.01),limits = c(1.5, 4.5), breaks=seq(1.5, 4.5, by=0.50)) +
+  labs(x = "Grade92 (Education Levels)",y = "ln(earnings per hour)")+
+  theme_light() +
+  ggtitle("Figure 3")
+graph1
+
+
+
+
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+graph2 <- ggplot(data = data, aes(x = grade92, y = ln_hourly_wage)) +
+  geom_point(color = "#3a5e8cFF") + 
+  geom_smooth(method="lm", color = "#10a53dFF", formual = 'y ~ x') +
+  scale_x_continuous(expand=c(0.01, 0.01), limits = c(40.5, 46.5),   breaks=seq(40, 47,   by=1)) + 
+  scale_y_continuous(expand=c(0.01, 0.01),limits = c(1.5, 4.5), breaks=seq(1.5, 4.5, by=0.50)) +
+  labs(x = "Grade92 (Education Levels)",y = "ln(earnings per hour)")+
+  theme_light() +
+  ggtitle("Figure 2")
+graph2
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+
+#####################################
+# bootstrap
+#####################################
+
+set.seed(201711)
+
+# function to obtain regression weights
+bs <- function(formula, data, indices) {
+  d <- data[indices,] # allows boot to select sample
+  fit <- lm(formula, data=d)
+  return(coef(fit))
+}
+
+# bootstrapping with 1000 replications
+results <- boot(data=data, statistic=bs,
+                R=1000, formula=ln_hourly_wage~female)
+
+b_earnings_female <- as.data.frame(results$t)
+colnames(b_earnings_female) <- c('_b_intercept','_b_female')
+
+
+bstps<- ggplot(data=b_earnings_female, aes(`_b_female`)) +
+  geom_histogram(aes(y = (..count..)/sum(..count..)), binwidth = 0.025,  center=0.0125, closed="left", 
+                 color = "#3a5e8cFF" , fill = "#3a5e8cFF",
+                 size = 0.2, alpha = 0.8,  show.legend=F, na.rm=TRUE) +
+  geom_segment(aes(x = -0.19, y = 0, xend = -0.19, yend = 0.35), color = "#10a53dFF", size = 1)+
+  annotate("text", x = -0.18, y = 0.35, label = "mean", size=2.5) +
+  coord_cartesian(xlim = c(-0.3, 0), ylim = c(0, 0.4)) +
+  labs(x = "Slope coefficients from bootstrap samples",y = "Percent")+
+  scale_y_continuous(expand = c(0.0,0.0), limits = c(0,0.5), 
+                     labels = scales::percent_format(accuracy = 1)) +
+  theme_light() 
+bstps
+
+
+```
+
+
