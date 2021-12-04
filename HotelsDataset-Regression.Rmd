@@ -1,0 +1,161 @@
+---
+title: "Data Analysis - Assignment 2 - Regression"
+author: "Fatima Arshad"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+What features make hostels acquire a high rating? Are the hotels which are rated high and are nearer to the city center comparatively expensive? This study is conducted to answer these questions by estimating linear probability, logit, and probit models with distance and stars as explanatory variables. We join the [**Hotel Features dataset**](https://osf.io/utwjs/download) and [**Hotel Price dataset**](https://osf.io/p6tyr/download) for Europe. For the purpose of this study the city we will choose is _**Paris**_.
+
+## Data Transformation and initial findings
+For this analysis, we will create the following new dependant variables:
+1. A binary variable _**high_rating**_ with a value of 1 when rating>4 and a value of 0 otherwise.
+2. A binary variable _**more_stars**_ with a value of 1 if stars>4 and a value of 0 otherwise.
+The visualize Lowess regression for high rated hotels and distance. By examining the kinks in Figure 1 we put two knots at 1.2 and 3 miles. We introduce two control variables i.e. the natural log of price (log_price). Finally, we will remove null and duplicated values from the dataset.
+
+## Analysis and Interpretation
+The calculations in the summary table tells that we have huge number of hotels with a high rating since the mean lies above 0.5. Six regression models are shown in which are: 1. lpm0, 2. lpm, 3. logit, 4. marginal logit, 5. probit and 6. marginal probit. The lmp0 constant tells us that hotels with more stars are 42.9 percent more likely to be highly rated. Looking at the 95% confidence interval around the [0.411 ,0.447] slope parameter tells us that we are 95% confident having more stars in the sample means being highly rated. Interpreting the predicted probability graph, firstly as the unit distance from the city center increases (i.e. 1 - 1.2 miles) this probability of high rated hotels is observed to decrease by 10.4 percent. Secondly, as the unit distance increases between the 1.2 to 3 miles radius does not have an effect on the high rating hotels. Moreover, the probability for any distance beyond a 3 miles radius from the city center decreases by 22.9 percent.Next, the model's logit and probit estimates suggest that the probability of high rated with more stars, distance price are similar to the linear model. The logit coefficients in the table are approximately five times the values of the corresponding logit marginal differences. Moreover, the probit coefficients are three times the values of respective logit marginal differences. Furthermore, the logit and probit marginal differences have the same values, which is why we will interpret the coefficients of both, logit and probit marginal differences. Figure 2 visualized all the models. The y-axis lists the predicted probability of logit and probit whereas the x-axis shows the predicted probability of LPM.As visible in the figure 2 graph, the logit and probit represented by the s-shaped curve, lie close to the LPM represented by the 45 degree line. We can generalize that hotels with more than four stars have 26% higher probability to be high rated given that all other variables are kept constant. By looking at the logit and probit estimates for the model, the probability of highly rated to top stars, distance and conditional on price are same variables as linear model. By looking to the column 3 and 4, the Logit Coefficients are almost five times the size of corresponding logit marginal differences. Furthermore, in the column 5 and 6, probit coefficient is almost three times the size of corresponding probit marginal differences. It is interesting to observe that the two marginal differences, logit and probit, are the same and they are the same with LMP coefficients in column 2 which is applicable for of the independent variables. To generalize the result, it shows that hotels with top stars other things (distance, price) the same are highly rated. To sum, top stars hotels have a 43 percent points higher chance to be highly rated. 
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# CLEAR MEMORY
+rm(list=ls())
+# Import libraries
+library(tidyverse)
+library(haven)
+library(data.table)
+library(rms)
+library(lspline)
+library(huxtable)
+library(modelsummary)
+library(pscl)
+library(esquisse)
+library(ggplot2)
+```
+
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# Load hotel dataset
+hotels_europe_price <- read_csv("https://osf.io/p6tyr/download")
+hotels_europe_features <- read_csv("https://osf.io/utwjs/download")
+```
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# Join price and features data by Hotel ID
+data <- left_join(hotels_europe_price, hotels_europe_features, by = "hotel_id")
+rm(hotels_europe_price,hotels_europe_features)
+```
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# Select Paris as city
+data <- data %>% filter(city_actual=="Paris")
+#unique(data$accommodation_type)
+data <- data <- data[data$accommodation_type=="Hotel",]
+ 
+data <- data %>% filter(!is.na(stars)) %>% filter(!is.na(distance)) %>% filter(!is.na(rating))
+# LOG transform of Price
+data$log_price <- log(data$price)
+data$high_rating <- ifelse(data$rating>=4, 1, 0)
+data$more_stars <- ifelse(data$stars>=4, 1, 0)
+data<-data[!duplicated(data),]
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Summary statistics on price and log of price
+P95 <- function(x){ quantile(x,.95,na.rm=T)}
+datasummary( high_rating + distance + stars ~ Mean + SD + Min + Max + Median + P95 + N , data = data, title = "Summary Statistics" )
+```
+
+
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+model_formula <- formula(high_rating ~ more_stars + lspline(distance, c(1.2, 3)) + log_price)
+```
+
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# lpm (repeating the previous regression)
+lmp0 <- lm(high_rating ~ more_stars + lspline(distance, c(1.2, 3)), data=data)
+lpm <-lm(model_formula, data=data, vcov = "hetreo")
+summary(lpm, vcov=sandwich)
+data$pred_lpm <- predict(lpm)
+summary(data$pred_lpm)
+```
+
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# Logit coefficients
+logit <- glm(model_formula, data=data, family = binomial ( link = "logit"))
+# Predicted probabilities 
+data$pred_logit <- predict.glm(logit, type="response")
+# Logit marginal differences
+library(mfx)
+logit_marg <- logitmfx(model_formula, data=data, atmean=FALSE, robust = T)
+```
+
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# Probit coefficients
+probit <- glm(model_formula, data=data, family=binomial(link="probit"))
+# Predicted probabilities 
+data$pred_probit<- predict.glm(probit, type="response") 
+# Probit marginal differences
+probit_marg <- probitmfx(model_formula, data=data, atmean=FALSE, robust = T)
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+cm <- c('(Intercept)' = 'Constant')
+msummary(list("LMP0" = lmp0, " LMP" = lpm, " logit coeffs" = logit, " logit Marg" = logit_marg, " Probit" = probit, " Probit Marg" = probit_marg),
+         fmt="%.3f",
+         gof_omit = 'DF|Deviance|Log.Lik.|F|R2 Adj.|AIC|BIC|R2|PseudoR2',
+         stars=c('*' = .05, '**' = .01),
+         coef_rename = cm,
+         coef_omit = 'as.factor(country)*',
+         title = "Probability of high rating hotels and more stars - LMP, Logit, and Probit models"
+         
+)
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+#distance
+g1 <- ggplot(data = data, aes(x=distance, y=high_rating)) +
+  geom_smooth(method="loess", color="3a5e8cFF") +
+  scale_y_continuous(expand = c(0.01,0.01),limits = c(0,1), breaks = seq(0,1,0.2), labels = scales::percent) +
+  labs(x = "Distance",y = "Probability of High Rating Hotels") +
+  theme_bw() +
+  ggtitle("Probability of Highly Rated vs Distance") +
+  theme(plot.title = element_text(size = 12), axis.title = element_text(size=8) )
+```
+
+
+
+```{r include=FALSE}
+g2 <- ggplot(data = data) +
+  geom_point(aes(x=pred_lpm, y=pred_probit, color="Probit"), size=0.5,  shape=16) +
+  geom_point(aes(x=pred_lpm, y=pred_logit,  color="Logit"), size=0.5,  shape=16) +
+  geom_line(aes(x=pred_lpm, y=pred_lpm,    color="45 Degree line"), size=0.5) +
+  labs(x = "Predicted probability of high rating (LPM)", y="Predicted probability")+
+  scale_y_continuous(expand = c(0.00,0.0), limits = c(0,1), breaks = seq(0,1,0.2)) +
+  scale_x_continuous(expand = c(0.00,0.0), limits = c(0,1), breaks = seq(0,1,0.2)) +
+  scale_color_manual(name = "", values=c("#541352FF", "#3a5e8cFF","#10a53dFF")) +
+  theme_bw() +
+theme(legend.position=c(0.55,0.08),
+        legend.direction = "horizontal",
+        legend.text = element_text(size = 7)) + 
+  ggtitle("Predicted Probability of LMP, Logit and Probit Models" ) +
+ theme(plot.title = element_text(size = 12), axis.title = element_text(size=8) )  
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.height=3.5, fig.width=3.5}
+g1
+g2
+```
